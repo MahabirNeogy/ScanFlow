@@ -327,12 +327,12 @@ private fun CameraContent(
                                         isProcessing = true
                                         scope.launch {
                                             withContext(Dispatchers.IO) {
-                                                capturedImages.forEach { path ->
-                                                    val bitmap = BitmapFactory.decodeFile(path)
-                                                    if (bitmap != null) {
-                                                        repository.addPage(addToDocumentId!!, bitmap)
-                                                        bitmap.recycle()
-                                                    }
+                                                val bitmaps = capturedImages.mapNotNull { path ->
+                                                    BitmapFactory.decodeFile(path)
+                                                }
+                                                if (bitmaps.isNotEmpty()) {
+                                                    repository.addPages(addToDocumentId!!, bitmaps)
+                                                    bitmaps.forEach { it.recycle() }
                                                 }
                                             }
                                             onBackClick()

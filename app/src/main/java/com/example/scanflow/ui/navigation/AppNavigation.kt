@@ -2,6 +2,8 @@ package com.example.scanflow.ui.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -42,11 +44,15 @@ fun AppNavigation() {
             arguments = listOf(navArgument("documentId") { type = NavType.StringType })
         ) { backStackEntry ->
             val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
+            val refreshKey by backStackEntry.savedStateHandle
+                .getStateFlow("refreshKey", 0L)
+                .collectAsState()
             DocumentDetailScreen(
                 documentId = documentId,
                 onBackClick = { navController.popBackStack() },
                 onPageClick = { pageIndex -> navController.navigate("edit/$documentId/$pageIndex") },
-                onAddPageClick = { navController.navigate("addpage/$documentId") }
+                onAddPageClick = { navController.navigate("addpage/$documentId") },
+                refreshKey = refreshKey
             )
         }
         composable(
@@ -61,7 +67,12 @@ fun AppNavigation() {
             PageEditScreen(
                 documentId = documentId,
                 pageIndex = pageIndex,
-                onClose = { navController.popBackStack() }
+                onClose = {
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("refreshKey", System.currentTimeMillis())
+                    navController.popBackStack()
+                }
             )
         }
         composable(
@@ -70,7 +81,12 @@ fun AppNavigation() {
         ) { backStackEntry ->
             val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
             CameraScreen(
-                onBackClick = { navController.popBackStack() },
+                onBackClick = {
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("refreshKey", System.currentTimeMillis())
+                    navController.popBackStack()
+                },
                 addToDocumentId = documentId
             )
         }

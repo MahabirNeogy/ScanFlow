@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +61,7 @@ fun PreviewScreen(
     var showSaveDialog  by remember { mutableStateOf(false) }
     var showCropOverlay by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val isSaving by viewModel.isSaving.collectAsState()
 
@@ -105,14 +108,7 @@ fun PreviewScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
-                    actions = {
-                        IconButton(onClick = { showCropOverlay = true }) {
-                            Icon(Icons.Default.Crop, contentDescription = "Crop")
-                        }
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
-                        }
-                    },
+                    actions = {},
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
                     )
@@ -198,7 +194,12 @@ fun PreviewScreen(
                             UtilityButton(Icons.Default.RotateRight, "Rotate R") {
                                 rotations[currentPage] = currentRotation + 90f
                             }
-                            UtilityButton(Icons.Default.Tune, "Adjust") {}
+                            UtilityButton(Icons.Default.Tune, "Adjust") {
+                                scope.launch { snackbarHostState.showSnackbar("Adjust feature coming soon") }
+                            }
+                            UtilityButton(Icons.Default.Crop, "Crop") {
+                                showCropOverlay = true
+                            }
                             UtilityButton(Icons.Default.AutoFixHigh, "Enhance") {
                                 filters[currentPage] = "HD Clear"
                             }

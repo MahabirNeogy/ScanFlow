@@ -3,9 +3,6 @@ package com.example.scanflow.ui.screens.detail
 import android.content.Intent
 import android.net.Uri
 import android.text.format.DateUtils
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -42,7 +39,8 @@ fun DocumentDetailScreen(
     documentId: String,
     onBackClick: () -> Unit,
     onPageClick: (Int) -> Unit = {},
-    onAddPageClick: () -> Unit = {}
+    onAddPageClick: () -> Unit = {},
+    refreshKey: Long = 0L
 ) {
     val context = LocalContext.current
     val viewModel: DocumentDetailViewModel = viewModel(factory = DocumentDetailViewModel.Factory(documentId))
@@ -60,17 +58,8 @@ fun DocumentDetailScreen(
     }
 
     // Refresh when returning from add-page / page-edit
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var hasResumedBefore by remember { mutableStateOf(false) }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                if (hasResumedBefore) viewModel.loadDocument()
-                hasResumedBefore = true
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0L) viewModel.loadDocument()
     }
 
     val doc = document

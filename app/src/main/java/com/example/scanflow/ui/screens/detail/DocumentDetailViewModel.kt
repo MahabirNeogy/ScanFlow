@@ -42,10 +42,7 @@ class DocumentDetailViewModel(
             _document.value = doc
             val count = repository.getPageCount(doc.pdfPath)
             _pageCount.value = count
-            val bitmaps = mutableMapOf<Int, Bitmap>()
-            for (i in 0 until count) {
-                repository.renderPage(doc.pdfPath, i, 400)?.let { bitmaps[i] = it }
-            }
+            val bitmaps = repository.renderPages(doc.pdfPath, (0 until count).toList(), 400)
             _pageBitmaps.value = bitmaps
         }
     }

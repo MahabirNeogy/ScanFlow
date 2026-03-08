@@ -1,5 +1,7 @@
 package com.example.scanflow.ui.screens.files
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,10 +17,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.scanflow.data.repository.DocumentRepositoryImpl
 import com.example.scanflow.ui.components.BottomNavigationBar
 import com.example.scanflow.ui.components.DocumentCard
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +36,8 @@ fun FilesScreen(
 ) {
     val categories = listOf("All Docs", "Work", "Personal", "ID Cards", "Receipts")
     var selectedCategory by remember { mutableStateOf("All Docs") }
+    val context = LocalContext.current
+    val repository = remember { DocumentRepositoryImpl(context) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -190,7 +198,23 @@ fun FilesScreen(
                         DocumentCard(
                             doc = doc,
                             onClick = { onDocumentClick(doc.id) },
-                            onDelete = { id -> viewModel.deleteDocument(id) }
+                            onDelete = { id -> viewModel.deleteDocument(id) },
+                            onShare = { id ->
+                                val document = repository.getDocument(id) ?: return@DocumentCard
+                                val shareUri: Uri = if (document.pdfPath.startsWith("content://")) {
+                                    Uri.parse(document.pdfPath)
+                                } else {
+                                    val pdfFile = File(document.pdfPath)
+                                    if (!pdfFile.exists()) return@DocumentCard
+                                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
+                                }
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share PDF"))
+                            }
                         )
                     }
                 }

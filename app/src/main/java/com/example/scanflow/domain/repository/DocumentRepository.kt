@@ -10,7 +10,9 @@ interface DocumentRepository {
     fun deleteDocument(id: String): Boolean
     fun renameDocument(id: String, newTitle: String): Boolean
     fun addPage(id: String, bitmap: Bitmap): Boolean
+    fun addPages(id: String, bitmaps: List<Bitmap>): Boolean
     fun updatePage(id: String, pageIndex: Int, bitmap: Bitmap): Boolean
     fun getPageCount(pdfPath: String): Int
     fun renderPage(pdfPath: String, pageIndex: Int, width: Int): Bitmap?
+    fun renderPages(pdfPath: String, pageIndices: List<Int>, width: Int): Map<Int, Bitmap>
 }

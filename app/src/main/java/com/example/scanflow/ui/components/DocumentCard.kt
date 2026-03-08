@@ -1,14 +1,15 @@
 package com.example.scanflow.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,14 +23,41 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.scanflow.domain.model.ScannedDocument
 import java.io.File
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DocumentCard(doc: ScannedDocument, onClick: () -> Unit = {}, onDelete: (String) -> Unit) {
-    var showMenu by remember { mutableStateOf(false) }
+fun DocumentCard(
+    doc: ScannedDocument,
+    onClick: () -> Unit = {},
+    onDelete: (String) -> Unit,
+    onShare: (String) -> Unit = {}
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Delete Document") },
+            text = { Text("Are you sure you want to delete \"${doc.title}\"? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false; onDelete(doc.id) },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .combinedClickable(
+                onClick = { onClick() },
+                onLongClick = { showDeleteDialog = true }
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -95,17 +123,8 @@ fun DocumentCard(doc: ScannedDocument, onClick: () -> Unit = {}, onDelete: (Stri
                 }
             }
 
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = Color.Black)
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        onClick = { showMenu = false; onDelete(doc.id) },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) }
-                    )
-                }
+            IconButton(onClick = { onShare(doc.id) }) {
+                Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.Black)
             }
         }
     }

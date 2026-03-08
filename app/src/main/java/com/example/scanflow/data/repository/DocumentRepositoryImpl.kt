@@ -17,9 +17,12 @@ class DocumentRepositoryImpl(context: Context) : DocumentRepository {
     override fun deleteDocument(id: String): Boolean = dataSource.deleteDocument(id)
     override fun renameDocument(id: String, newTitle: String): Boolean = dataSource.renameDocument(id, newTitle)
     override fun addPage(id: String, bitmap: Bitmap): Boolean = dataSource.addPage(id, bitmap)
+    override fun addPages(id: String, bitmaps: List<Bitmap>): Boolean = dataSource.addPages(id, bitmaps)
     override fun updatePage(id: String, pageIndex: Int, bitmap: Bitmap): Boolean =
         dataSource.updatePage(id, pageIndex, bitmap)
     override fun getPageCount(pdfPath: String): Int = dataSource.getPageCount(pdfPath)
     override fun renderPage(pdfPath: String, pageIndex: Int, width: Int): Bitmap? =
         dataSource.renderPage(pdfPath, pageIndex, width)
+    override fun renderPages(pdfPath: String, pageIndices: List<Int>, width: Int): Map<Int, Bitmap> =
+        dataSource.renderPages(pdfPath, pageIndices, width)
 }

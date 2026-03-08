@@ -216,30 +216,49 @@ class PdfDataSource(private val context: Context) {
     }
 
     fun renderPage(pdfPath: String, pageIndex: Int, width: Int): Bitmap? {
-        return try {
+        return renderPages(pdfPath, listOf(pageIndex), width)[pageIndex]
+    }
+
+    fun renderPages(pdfPath: String, pageIndices: List<Int>, width: Int): Map<Int, Bitmap> {
+        val result = mutableMapOf<Int, Bitmap>()
+        try {
             openPdfDescriptor(pdfPath, "r")?.use { fd ->
                 val renderer = PdfRenderer(fd)
-                if (pageIndex >= renderer.pageCount) { renderer.close(); return null }
-                val page = renderer.openPage(pageIndex)
-                val scale = width.toFloat() / page.width
-                val bitmap = Bitmap.createBitmap(width, (page.height * scale).toInt(), Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(android.graphics.Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                page.close()
+                for (pageIndex in pageIndices) {
+                    if (pageIndex >= renderer.pageCount) continue
+                    val page = renderer.openPage(pageIndex)
+                    val scale = width.toFloat() / page.width
+                    val bitmap = Bitmap.createBitmap(width, (page.height * scale).toInt(), Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+                    result[pageIndex] = bitmap
+                }
                 renderer.close()
-                bitmap
             }
-        } catch (e: Exception) { null }
+        } catch (_: Exception) {}
+        return result
     }
 
     // ── PDF Editing ──────────────────────────────────────────────────────────
 
     fun addPage(id: String, newPageBitmap: Bitmap): Boolean {
+        return addPages(id, listOf(newPageBitmap))
+    }
+
+    fun addPages(id: String, newPageBitmaps: List<Bitmap>): Boolean {
+        if (newPageBitmaps.isEmpty()) return true
         val pdfUri = getDocumentPdfUri(id) ?: return false
         return try {
             val existingBitmaps = renderAllPages(pdfUri)
-            writePdfToUri(pdfUri, existingBitmaps + newPageBitmap)
+            writePdfToUri(pdfUri, existingBitmaps + newPageBitmaps)
+            existingBitmaps.forEach { it.recycle() }
             updateMetaFileSize(id, getPdfSize(pdfUri))
+            // Update thumbnail if document was empty
+            if (existingBitmaps.isEmpty()) {
+                val docDir = File(getMetaDir(), id)
+                saveThumbnail(newPageBitmaps.first(), File(docDir, "thumb.jpg"))
+            }
             true
         } catch (e: Exception) { false }
     }
