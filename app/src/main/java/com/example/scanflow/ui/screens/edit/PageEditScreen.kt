@@ -8,8 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.RotateRight
@@ -37,6 +39,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.scanflow.data.repository.DocumentRepositoryImpl
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.isLandscape
+import com.example.scanflow.ui.util.rememberWindowSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +68,9 @@ fun PageEditScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val repository = remember { DocumentRepositoryImpl(context) }
+    val windowSize = rememberWindowSize()
+    val landscape = isLandscape()
+    val isExpandedLayout = landscape && windowSize != WindowSize.Compact
 
     var baseBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -167,6 +175,322 @@ fun PageEditScreen(
     val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
     val aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
 
+    // Canvas composable (shared)
+    @Composable
+    fun EditCanvas(modifier: Modifier) {
+        Box(
+            modifier = modifier.background(Color(0xFFE8EAF0)).padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator()
+            } else {
+                Card(
+                    modifier = Modifier.aspectRatio(aspectRatio),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onSizeChanged { canvasSize = it }
+                            .pointerInput(isCropMode) {
+                                if (isCropMode) {
+                                    var activeHandle: PageCropHandle? = null
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            val hitRadius = 48f
+                                            activeHandle = when {
+                                                (offset - Offset(cropLeft, cropTop)).getDistance()     < hitRadius -> PageCropHandle.TOP_LEFT
+                                                (offset - Offset(cropRight, cropTop)).getDistance()    < hitRadius -> PageCropHandle.TOP_RIGHT
+                                                (offset - Offset(cropLeft, cropBottom)).getDistance()  < hitRadius -> PageCropHandle.BOTTOM_LEFT
+                                                (offset - Offset(cropRight, cropBottom)).getDistance() < hitRadius -> PageCropHandle.BOTTOM_RIGHT
+                                                offset.x in cropLeft..cropRight && offset.y in cropTop..cropBottom -> PageCropHandle.MOVE
+                                                else -> null
+                                            }
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            if (activeHandle == null) return@detectDragGestures
+                                            val dx = dragAmount.x; val dy = dragAmount.y
+                                            val minSize = 60f
+                                            val maxW = size.width.toFloat(); val maxH = size.height.toFloat()
+                                            when (activeHandle) {
+                                                PageCropHandle.TOP_LEFT -> {
+                                                    cropLeft = (cropLeft + dx).coerceIn(0f, cropRight  - minSize)
+                                                    cropTop  = (cropTop  + dy).coerceIn(0f, cropBottom - minSize)
+                                                }
+                                                PageCropHandle.TOP_RIGHT -> {
+                                                    cropRight = (cropRight + dx).coerceIn(cropLeft + minSize, maxW)
+                                                    cropTop   = (cropTop   + dy).coerceIn(0f, cropBottom - minSize)
+                                                }
+                                                PageCropHandle.BOTTOM_LEFT -> {
+                                                    cropLeft   = (cropLeft   + dx).coerceIn(0f, cropRight - minSize)
+                                                    cropBottom = (cropBottom + dy).coerceIn(cropTop + minSize, maxH)
+                                                }
+                                                PageCropHandle.BOTTOM_RIGHT -> {
+                                                    cropRight  = (cropRight  + dx).coerceIn(cropLeft + minSize, maxW)
+                                                    cropBottom = (cropBottom + dy).coerceIn(cropTop + minSize, maxH)
+                                                }
+                                                PageCropHandle.MOVE -> {
+                                                    val w = cropRight - cropLeft; val h = cropBottom - cropTop
+                                                    val newLeft = (cropLeft + dx).coerceIn(0f, maxW - w)
+                                                    val newTop  = (cropTop  + dy).coerceIn(0f, maxH - h)
+                                                    cropLeft = newLeft; cropTop = newTop
+                                                    cropRight = newLeft + w; cropBottom = newTop + h
+                                                }
+                                                null -> {}
+                                            }
+                                        },
+                                        onDragEnd = { activeHandle = null }
+                                    )
+                                } else {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            if (!eraserState.value) {
+                                                currentPoints = listOf(offset)
+                                                redoStack.clear()
+                                            }
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            val pos = change.position
+                                            if (eraserState.value) {
+                                                val toRemove = paths.filter { path ->
+                                                    path.points.any { pt -> (pt - pos).getDistance() < 30f }
+                                                }
+                                                if (toRemove.isNotEmpty()) paths.removeAll(toRemove.toSet())
+                                            } else {
+                                                currentPoints = currentPoints + pos
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            if (!eraserState.value && currentPoints.size > 1) {
+                                                val (sw, a) = getToolProperties(toolState.value)
+                                                paths.add(DrawingPath(currentPoints.toList(), colorState.value, sw, a))
+                                            }
+                                            currentPoints = emptyList()
+                                        }
+                                    )
+                                }
+                            }
+                    ) {
+                        drawImage(image = imageBitmap, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
+
+                        for (dp in paths) {
+                            drawPath(
+                                path = buildSmoothPath(dp.points),
+                                color = dp.color,
+                                alpha = dp.alpha,
+                                style = Stroke(width = dp.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+                        }
+
+                        if (isCropMode) {
+                            val cl = cropLeft; val ct = cropTop; val cr = cropRight; val cb = cropBottom
+                            val overlay = Color.Black.copy(alpha = 0.5f)
+                            drawRect(overlay, Offset.Zero, Size(size.width, ct))
+                            drawRect(overlay, Offset(0f, cb), Size(size.width, size.height - cb))
+                            drawRect(overlay, Offset(0f, ct), Size(cl, cb - ct))
+                            drawRect(overlay, Offset(cr, ct), Size(size.width - cr, cb - ct))
+                            drawRect(Color.White, Offset(cl, ct), Size(cr - cl, cb - ct), style = Stroke(2f))
+                            val thirdW = (cr - cl) / 3; val thirdH = (cb - ct) / 3
+                            val gridColor = Color.White.copy(alpha = 0.3f)
+                            for (i in 1..2) {
+                                drawLine(gridColor, Offset(cl + thirdW * i, ct), Offset(cl + thirdW * i, cb), 0.5f)
+                                drawLine(gridColor, Offset(cl, ct + thirdH * i), Offset(cr, ct + thirdH * i), 0.5f)
+                            }
+                            val handleR = 10f
+                            listOf(Offset(cl, ct), Offset(cr, ct), Offset(cl, cb), Offset(cr, cb)).forEach { pos ->
+                                drawCircle(Color.White, handleR + 2, pos)
+                                drawCircle(primaryColor, handleR, pos)
+                            }
+                        } else {
+                            if (currentPoints.size >= 2 && !eraserState.value) {
+                                val (sw, a) = getToolProperties(toolState.value)
+                                drawPath(
+                                    path = buildSmoothPath(currentPoints),
+                                    color = colorState.value,
+                                    alpha = a,
+                                    style = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Tools panel composable (shared)
+    @Composable
+    fun ToolsPanel(modifier: Modifier = Modifier) {
+        Surface(modifier = modifier, color = Color.White, shadowElevation = 8.dp) {
+            Column(
+                modifier = Modifier
+                    .then(if (isExpandedLayout) Modifier.width(360.dp).verticalScroll(rememberScrollState()) else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xFFF5F5F5))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    DrawingTool.entries.forEach { tool ->
+                        val isSelected = selectedTool == tool && !isEraserActive
+                        val icon = when (tool) {
+                            DrawingTool.PENCIL    -> Icons.Default.Edit
+                            DrawingTool.MARKER    -> Icons.Default.Brush
+                            DrawingTool.HIGHLIGHT -> Icons.Default.FormatPaint
+                        }
+                        val label = when (tool) {
+                            DrawingTool.PENCIL    -> "Pencil"
+                            DrawingTool.MARKER    -> "Marker"
+                            DrawingTool.HIGHLIGHT -> "Highlight"
+                        }
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            onClick = { selectedTool = tool; isEraserActive = false },
+                            color = if (isSelected) Color.White else Color.Transparent,
+                            shape = RoundedCornerShape(50),
+                            shadowElevation = if (isSelected) 2.dp else 0.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isSelected) primaryColor else Color.Gray
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) primaryColor else Color.Gray,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { if (paths.isNotEmpty()) redoStack.add(paths.removeLast()) },
+                        enabled = paths.isNotEmpty()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "Undo",
+                            tint = if (paths.isNotEmpty()) Color.DarkGray else Color.LightGray
+                        )
+                    }
+                    IconButton(
+                        onClick = { if (redoStack.isNotEmpty()) paths.add(redoStack.removeLast()) },
+                        enabled = redoStack.isNotEmpty()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Redo,
+                            contentDescription = "Redo",
+                            tint = if (redoStack.isNotEmpty()) Color.DarkGray else Color.LightGray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    presetColors.forEach { color ->
+                        val isSelected = selectedColor == color
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .then(if (isSelected) Modifier.border(2.5.dp, primaryColor, CircleShape) else Modifier)
+                                .clip(CircleShape)
+                                .clickable { selectedColor = color; isEraserActive = false }
+                                .padding(if (isSelected) 4.dp else 0.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        scope.launch { snackbarHostState.showSnackbar("Custom colors coming soon") }
+                    }) {
+                        Icon(Icons.Default.Palette, contentDescription = "Color picker", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { enterCropMode() }
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Crop, contentDescription = "Crop", tint = Color.DarkGray)
+                        Text("Crop", fontSize = 12.sp, color = Color.DarkGray)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { handleRotate() }
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate", tint = Color.DarkGray)
+                        Text("Rotate", fontSize = 12.sp, color = Color.DarkGray)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isEraserActive = !isEraserActive }
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.EditOff,
+                            contentDescription = "Eraser",
+                            tint = if (isEraserActive) primaryColor else Color.DarkGray
+                        )
+                        Text(
+                            "Eraser",
+                            fontSize = 12.sp,
+                            color = if (isEraserActive) primaryColor else Color.DarkGray
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -211,302 +535,18 @@ fun PageEditScreen(
             }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).background(Color(0xFFE8EAF0))
-        ) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator()
-                } else {
-                    Card(
-                        modifier = Modifier.aspectRatio(aspectRatio),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White)
-                    ) {
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .onSizeChanged { canvasSize = it }
-                                .pointerInput(isCropMode) {
-                                    if (isCropMode) {
-                                        var activeHandle: PageCropHandle? = null
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                val hitRadius = 48f
-                                                activeHandle = when {
-                                                    (offset - Offset(cropLeft, cropTop)).getDistance()     < hitRadius -> PageCropHandle.TOP_LEFT
-                                                    (offset - Offset(cropRight, cropTop)).getDistance()    < hitRadius -> PageCropHandle.TOP_RIGHT
-                                                    (offset - Offset(cropLeft, cropBottom)).getDistance()  < hitRadius -> PageCropHandle.BOTTOM_LEFT
-                                                    (offset - Offset(cropRight, cropBottom)).getDistance() < hitRadius -> PageCropHandle.BOTTOM_RIGHT
-                                                    offset.x in cropLeft..cropRight && offset.y in cropTop..cropBottom -> PageCropHandle.MOVE
-                                                    else -> null
-                                                }
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                if (activeHandle == null) return@detectDragGestures
-                                                val dx = dragAmount.x; val dy = dragAmount.y
-                                                val minSize = 60f
-                                                val maxW = size.width.toFloat(); val maxH = size.height.toFloat()
-                                                when (activeHandle) {
-                                                    PageCropHandle.TOP_LEFT -> {
-                                                        cropLeft = (cropLeft + dx).coerceIn(0f, cropRight  - minSize)
-                                                        cropTop  = (cropTop  + dy).coerceIn(0f, cropBottom - minSize)
-                                                    }
-                                                    PageCropHandle.TOP_RIGHT -> {
-                                                        cropRight = (cropRight + dx).coerceIn(cropLeft + minSize, maxW)
-                                                        cropTop   = (cropTop   + dy).coerceIn(0f, cropBottom - minSize)
-                                                    }
-                                                    PageCropHandle.BOTTOM_LEFT -> {
-                                                        cropLeft   = (cropLeft   + dx).coerceIn(0f, cropRight - minSize)
-                                                        cropBottom = (cropBottom + dy).coerceIn(cropTop + minSize, maxH)
-                                                    }
-                                                    PageCropHandle.BOTTOM_RIGHT -> {
-                                                        cropRight  = (cropRight  + dx).coerceIn(cropLeft + minSize, maxW)
-                                                        cropBottom = (cropBottom + dy).coerceIn(cropTop + minSize, maxH)
-                                                    }
-                                                    PageCropHandle.MOVE -> {
-                                                        val w = cropRight - cropLeft; val h = cropBottom - cropTop
-                                                        val newLeft = (cropLeft + dx).coerceIn(0f, maxW - w)
-                                                        val newTop  = (cropTop  + dy).coerceIn(0f, maxH - h)
-                                                        cropLeft = newLeft; cropTop = newTop
-                                                        cropRight = newLeft + w; cropBottom = newTop + h
-                                                    }
-                                                    null -> {}
-                                                }
-                                            },
-                                            onDragEnd = { activeHandle = null }
-                                        )
-                                    } else {
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                if (!eraserState.value) {
-                                                    currentPoints = listOf(offset)
-                                                    redoStack.clear()
-                                                }
-                                            },
-                                            onDrag = { change, _ ->
-                                                change.consume()
-                                                val pos = change.position
-                                                if (eraserState.value) {
-                                                    val toRemove = paths.filter { path ->
-                                                        path.points.any { pt -> (pt - pos).getDistance() < 30f }
-                                                    }
-                                                    if (toRemove.isNotEmpty()) paths.removeAll(toRemove.toSet())
-                                                } else {
-                                                    currentPoints = currentPoints + pos
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                if (!eraserState.value && currentPoints.size > 1) {
-                                                    val (sw, a) = getToolProperties(toolState.value)
-                                                    paths.add(DrawingPath(currentPoints.toList(), colorState.value, sw, a))
-                                                }
-                                                currentPoints = emptyList()
-                                            }
-                                        )
-                                    }
-                                }
-                        ) {
-                            drawImage(image = imageBitmap, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
-
-                            for (dp in paths) {
-                                drawPath(
-                                    path = buildSmoothPath(dp.points),
-                                    color = dp.color,
-                                    alpha = dp.alpha,
-                                    style = Stroke(width = dp.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                )
-                            }
-
-                            if (isCropMode) {
-                                val cl = cropLeft; val ct = cropTop; val cr = cropRight; val cb = cropBottom
-                                val overlay = Color.Black.copy(alpha = 0.5f)
-                                drawRect(overlay, Offset.Zero, Size(size.width, ct))
-                                drawRect(overlay, Offset(0f, cb), Size(size.width, size.height - cb))
-                                drawRect(overlay, Offset(0f, ct), Size(cl, cb - ct))
-                                drawRect(overlay, Offset(cr, ct), Size(size.width - cr, cb - ct))
-                                drawRect(Color.White, Offset(cl, ct), Size(cr - cl, cb - ct), style = Stroke(2f))
-                                val thirdW = (cr - cl) / 3; val thirdH = (cb - ct) / 3
-                                val gridColor = Color.White.copy(alpha = 0.3f)
-                                for (i in 1..2) {
-                                    drawLine(gridColor, Offset(cl + thirdW * i, ct), Offset(cl + thirdW * i, cb), 0.5f)
-                                    drawLine(gridColor, Offset(cl, ct + thirdH * i), Offset(cr, ct + thirdH * i), 0.5f)
-                                }
-                                val handleR = 10f
-                                listOf(Offset(cl, ct), Offset(cr, ct), Offset(cl, cb), Offset(cr, cb)).forEach { pos ->
-                                    drawCircle(Color.White, handleR + 2, pos)
-                                    drawCircle(primaryColor, handleR, pos)
-                                }
-                            } else {
-                                if (currentPoints.size >= 2 && !eraserState.value) {
-                                    val (sw, a) = getToolProperties(toolState.value)
-                                    drawPath(
-                                        path = buildSmoothPath(currentPoints),
-                                        color = colorState.value,
-                                        alpha = a,
-                                        style = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+        if (isExpandedLayout && !isCropMode) {
+            // Tablet: canvas on left, tools on right
+            Row(modifier = Modifier.fillMaxSize().padding(padding)) {
+                EditCanvas(modifier = Modifier.weight(1f).fillMaxHeight())
+                ToolsPanel(modifier = Modifier.fillMaxHeight())
             }
-
-            if (!isCropMode) {
-                Surface(modifier = Modifier.fillMaxWidth(), color = Color.White, shadowElevation = 8.dp) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFFF5F5F5))
-                                    .padding(3.dp),
-                                horizontalArrangement = Arrangement.spacedBy(0.dp)
-                            ) {
-                                DrawingTool.entries.forEach { tool ->
-                                    val isSelected = selectedTool == tool && !isEraserActive
-                                    val icon = when (tool) {
-                                        DrawingTool.PENCIL    -> Icons.Default.Edit
-                                        DrawingTool.MARKER    -> Icons.Default.Brush
-                                        DrawingTool.HIGHLIGHT -> Icons.Default.FormatPaint
-                                    }
-                                    Surface(
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { selectedTool = tool; isEraserActive = false },
-                                        color = if (isSelected) Color.White else Color.Transparent,
-                                        shape = RoundedCornerShape(50),
-                                        shadowElevation = if (isSelected) 2.dp else 0.dp
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                            horizontalArrangement = Arrangement.Center,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = icon,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp),
-                                                tint = if (isSelected) primaryColor else Color.Gray
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = tool.name.lowercase().replaceFirstChar { it.uppercase() },
-                                                fontSize = 12.sp,
-                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                                color = if (isSelected) primaryColor else Color.Gray
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            IconButton(
-                                onClick = { if (paths.isNotEmpty()) redoStack.add(paths.removeLast()) },
-                                enabled = paths.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Undo,
-                                    contentDescription = "Undo",
-                                    tint = if (paths.isNotEmpty()) Color.DarkGray else Color.LightGray
-                                )
-                            }
-                            IconButton(
-                                onClick = { if (redoStack.isNotEmpty()) paths.add(redoStack.removeLast()) },
-                                enabled = redoStack.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Redo,
-                                    contentDescription = "Redo",
-                                    tint = if (redoStack.isNotEmpty()) Color.DarkGray else Color.LightGray
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            presetColors.forEach { color ->
-                                val isSelected = selectedColor == color
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .then(if (isSelected) Modifier.border(2.5.dp, primaryColor, CircleShape) else Modifier)
-                                        .clip(CircleShape)
-                                        .clickable { selectedColor = color; isEraserActive = false }
-                                        .padding(if (isSelected) 4.dp else 0.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            IconButton(onClick = {
-                                scope.launch { snackbarHostState.showSnackbar("Custom colors coming soon") }
-                            }) {
-                                Icon(Icons.Default.Palette, contentDescription = "Color picker", tint = Color.Gray)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { enterCropMode() }
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Crop, contentDescription = "Crop", tint = Color.DarkGray)
-                                Text("Crop", fontSize = 12.sp, color = Color.DarkGray)
-                            }
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { handleRotate() }
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate", tint = Color.DarkGray)
-                                Text("Rotate", fontSize = 12.sp, color = Color.DarkGray)
-                            }
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { isEraserActive = !isEraserActive }
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.EditOff,
-                                    contentDescription = "Eraser",
-                                    tint = if (isEraserActive) primaryColor else Color.DarkGray
-                                )
-                                Text(
-                                    "Eraser",
-                                    fontSize = 12.sp,
-                                    color = if (isEraserActive) primaryColor else Color.DarkGray
-                                )
-                            }
-                        }
-                    }
+        } else {
+            // Phone: canvas on top, tools on bottom
+            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                EditCanvas(modifier = Modifier.weight(1f).fillMaxWidth())
+                if (!isCropMode) {
+                    ToolsPanel(modifier = Modifier.fillMaxWidth())
                 }
             }
         }

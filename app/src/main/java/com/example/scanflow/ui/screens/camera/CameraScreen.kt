@@ -44,6 +44,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import java.io.File
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.rememberWindowSize
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
@@ -115,6 +117,8 @@ private fun CameraContent(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val windowSize = rememberWindowSize()
+    val isTablet = windowSize != WindowSize.Compact
     val previewView = remember { PreviewView(context) }
     val isAddPageMode = addToDocumentId != null
     val repository = remember { DocumentRepositoryImpl(context) }
@@ -257,17 +261,19 @@ private fun CameraContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 40.dp),
+                    .padding(bottom = if (isTablet) 64.dp else 40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(if (isTablet) 56.dp else 48.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .border(2.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                             .clickable { galleryLauncher.launch("image/*") },
@@ -281,9 +287,11 @@ private fun CameraContent(
                         )
                     }
 
+                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 0.dp))
+
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(if (isTablet) 88.dp else 80.dp)
                             .clip(CircleShape)
                             .clickable(enabled = !isCapturing) {
                                 isCapturing = true
@@ -316,6 +324,8 @@ private fun CameraContent(
                                 .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 0.dp))
 
                     if (capturedImages.isNotEmpty()) {
                         Row(

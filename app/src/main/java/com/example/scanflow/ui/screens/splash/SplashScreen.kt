@@ -16,13 +16,26 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.rememberWindowSize
 import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
+    val windowSize = rememberWindowSize()
+    val iconSize = when (windowSize) {
+        WindowSize.Compact -> 160.dp
+        WindowSize.Medium -> 200.dp
+        WindowSize.Expanded -> 220.dp
+    }
+    val innerIconSize = when (windowSize) {
+        WindowSize.Compact -> 80.dp
+        WindowSize.Medium -> 100.dp
+        WindowSize.Expanded -> 110.dp
+    }
+
     LaunchedEffect(Unit) {
         delay(2500)
         onTimeout()
@@ -55,7 +68,7 @@ fun SplashScreen(onTimeout: () -> Unit) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(160.dp)
+                    .size(iconSize)
                     .clip(RoundedCornerShape(24.dp))
                     .background(
                         brush = Brush.linearGradient(
@@ -79,7 +92,7 @@ fun SplashScreen(onTimeout: () -> Unit) {
                     imageVector = Icons.Default.DocumentScanner,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(80.dp)
+                    modifier = Modifier.size(innerIconSize)
                 )
 
                 Box(
@@ -87,7 +100,7 @@ fun SplashScreen(onTimeout: () -> Unit) {
                         .fillMaxWidth()
                         .height(2.dp)
                         .align(Alignment.TopCenter)
-                        .offset(y = (160 * scanOffset).dp)
+                        .offset(y = (iconSize.value * scanOffset).dp)
                         .background(Color.White.copy(alpha = 0.8f))
                         .blur(1.dp)
                 )
@@ -97,7 +110,8 @@ fun SplashScreen(onTimeout: () -> Unit) {
 
             Text(
                 text = "ScanFlow",
-                style = MaterialTheme.typography.headlineLarge,
+                style = if (windowSize == WindowSize.Compact) MaterialTheme.typography.headlineLarge
+                        else MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onBackground
             )
 
@@ -109,17 +123,5 @@ fun SplashScreen(onTimeout: () -> Unit) {
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 48.dp),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Text(
-                text = "Powered by AI Precision",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-            )
-        }
     }
 }
