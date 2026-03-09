@@ -11,8 +11,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -30,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.isLandscape
+import com.example.scanflow.ui.util.rememberWindowSize
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +45,10 @@ fun PreviewScreen(
     onSaveClick: () -> Unit,
     viewModel: PreviewViewModel = viewModel()
 ) {
+    val windowSize = rememberWindowSize()
+    val landscape = isLandscape()
+    val isExpandedLayout = landscape && windowSize != WindowSize.Compact
+
     val originalBitmaps = remember(imagePaths) {
         mutableStateListOf(*imagePaths.map { BitmapFactory.decodeFile(it) }.toTypedArray())
     }
@@ -97,6 +106,146 @@ fun PreviewScreen(
         )
     }
 
+    // Controls panel content (shared between compact and expanded)
+    @Composable
+    fun ControlsPanel(modifier: Modifier = Modifier, isVertical: Boolean = false) {
+        val controlsModifier = if (isVertical) {
+            modifier.verticalScroll(rememberScrollState())
+        } else modifier
+
+        Surface(
+            color = Color(0xFF1A1C24),
+            shape = if (isVertical) RoundedCornerShape(topStart = 24.dp)
+                    else RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            modifier = if (isVertical) Modifier.fillMaxHeight().width(380.dp) else Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = controlsModifier.padding(top = 24.dp, bottom = 32.dp, start = 16.dp, end = 16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    @Suppress("DEPRECATION")
+                    UtilityButton(Icons.Default.RotateLeft, "Rotate L") {
+                        rotations[currentPage] = currentRotation - 90f
+                    }
+                    @Suppress("DEPRECATION")
+                    UtilityButton(Icons.Default.RotateRight, "Rotate R") {
+                        rotations[currentPage] = currentRotation + 90f
+                    }
+                    UtilityButton(Icons.Default.Tune, "Adjust") {
+                        scope.launch { snackbarHostState.showSnackbar("Adjust feature coming soon") }
+                    }
+                    UtilityButton(Icons.Default.Crop, "Crop") {
+                        showCropOverlay = true
+                    }
+                    UtilityButton(Icons.Default.AutoFixHigh, "Enhance") {
+                        filters[currentPage] = "HD Clear"
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    items(filterNames) { filter ->
+                        FilterItem(
+                            name = filter,
+                            isSelected = filter == currentFilter,
+                            thumbnail = filterThumbnails[filter],
+                            onClick = { filters[currentPage] = filter }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (imagePaths.size == 1) "1 page"
+                               else "${currentPage + 1} of ${imagePaths.size} pages",
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(
+                        onClick = { showSaveDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save as PDF", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // Image pager content (shared)
+    @Composable
+    fun ImagePager(modifier: Modifier = Modifier) {
+        Box(modifier = modifier) {
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                val bitmap   = originalBitmaps[page]!!
+                val rotation = rotations[page] ?: 0f
+                val filter   = filters[page] ?: "Original"
+                val processed = remember(bitmap, rotation, filter) {
+                    applyProcessing(bitmap, rotation, filter)
+                }
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
+                        shape = RoundedCornerShape(8.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+                    ) {
+                        processed?.let { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Page ${page + 1}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (imagePaths.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 8.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(imagePaths.size) { index ->
+                        Box(
+                            modifier = Modifier
+                                .size(if (index == currentPage) 8.dp else 6.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (index == currentPage) Color.White
+                                    else Color.White.copy(alpha = 0.4f)
+                                )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -115,137 +264,27 @@ fun PreviewScreen(
                 )
             }
         ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .background(Color(0xFFF5F5F5))
-            ) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                        val bitmap   = originalBitmaps[page]!!
-                        val rotation = rotations[page] ?: 0f
-                        val filter   = filters[page] ?: "Original"
-                        val processed = remember(bitmap, rotation, filter) {
-                            applyProcessing(bitmap, rotation, filter)
-                        }
-                        Box(
-                            modifier = Modifier.fillMaxSize().padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Card(
-                                modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
-                                shape = RoundedCornerShape(8.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
-                            ) {
-                                processed?.let { bmp ->
-                                    Image(
-                                        bitmap = bmp.asImageBitmap(),
-                                        contentDescription = "Page ${page + 1}",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Fit
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (imagePaths.size > 1) {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 8.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            repeat(imagePaths.size) { index ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(if (index == currentPage) 8.dp else 6.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (index == currentPage) Color.White
-                                            else Color.White.copy(alpha = 0.4f)
-                                        )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Surface(
-                    color = Color(0xFF1A1C24),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    modifier = Modifier.fillMaxWidth()
+            if (isExpandedLayout) {
+                // Tablet: side-by-side layout
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .background(Color(0xFFF5F5F5))
                 ) {
-                    Column(modifier = Modifier.padding(top = 24.dp, bottom = 32.dp, start = 16.dp, end = 16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            @Suppress("DEPRECATION")
-                            UtilityButton(Icons.Default.RotateLeft, "Rotate L") {
-                                rotations[currentPage] = currentRotation - 90f
-                            }
-                            @Suppress("DEPRECATION")
-                            UtilityButton(Icons.Default.RotateRight, "Rotate R") {
-                                rotations[currentPage] = currentRotation + 90f
-                            }
-                            UtilityButton(Icons.Default.Tune, "Adjust") {
-                                scope.launch { snackbarHostState.showSnackbar("Adjust feature coming soon") }
-                            }
-                            UtilityButton(Icons.Default.Crop, "Crop") {
-                                showCropOverlay = true
-                            }
-                            UtilityButton(Icons.Default.AutoFixHigh, "Enhance") {
-                                filters[currentPage] = "HD Clear"
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
-                        ) {
-                            items(filterNames) { filter ->
-                                FilterItem(
-                                    name = filter,
-                                    isSelected = filter == currentFilter,
-                                    thumbnail = filterThumbnails[filter],
-                                    onClick = { filters[currentPage] = filter }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (imagePaths.size == 1) "1 page"
-                                       else "${currentPage + 1} of ${imagePaths.size} pages",
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Button(
-                                onClick = { showSaveDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
-                            ) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Save as PDF", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    ImagePager(modifier = Modifier.weight(1f).fillMaxHeight())
+                    ControlsPanel(isVertical = true)
+                }
+            } else {
+                // Phone: stacked layout
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .background(Color(0xFFF5F5F5))
+                ) {
+                    ImagePager(modifier = Modifier.weight(1f).fillMaxWidth())
+                    ControlsPanel()
                 }
             }
         }

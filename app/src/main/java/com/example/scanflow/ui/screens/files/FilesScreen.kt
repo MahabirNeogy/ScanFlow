@@ -2,10 +2,14 @@ package com.example.scanflow.ui.screens.files
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,12 +22,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.scanflow.R
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.scanflow.data.repository.DocumentRepositoryImpl
 import com.example.scanflow.ui.components.BottomNavigationBar
 import com.example.scanflow.ui.components.DocumentCard
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.rememberWindowSize
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,6 +42,13 @@ fun FilesScreen(
     onInfoClick: () -> Unit = {},
     viewModel: FilesViewModel = viewModel()
 ) {
+    val windowSize = rememberWindowSize()
+    val gridColumns = when (windowSize) {
+        WindowSize.Compact -> 1
+        WindowSize.Medium -> 2
+        WindowSize.Expanded -> 3
+    }
+
     val categories = listOf("All Docs", "Work", "Personal", "ID Cards", "Receipts")
     var selectedCategory by remember { mutableStateOf("All Docs") }
     val context = LocalContext.current
@@ -51,6 +66,23 @@ fun FilesScreen(
     val displayedDocuments = remember(filteredDocuments, searchQuery) {
         if (searchQuery.isBlank()) filteredDocuments
         else filteredDocuments.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    }
+
+    fun shareDocument(id: String) {
+        val document = repository.getDocument(id) ?: return
+        val shareUri: Uri = if (document.pdfPath.startsWith("content://")) {
+            Uri.parse(document.pdfPath)
+        } else {
+            val pdfFile = File(document.pdfPath)
+            if (!pdfFile.exists()) return
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, shareUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share PDF"))
     }
 
     Scaffold(
@@ -78,19 +110,13 @@ fun FilesScreen(
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
+                            Image(
+                                painter = painterResource(id = R.drawable.app_icon),
+                                contentDescription = null,
                                 modifier = Modifier
                                     .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Description,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                                    .clip(RoundedCornerShape(10.dp))
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text("All Documents", style = MaterialTheme.typography.titleLarge)
                         }
@@ -159,62 +185,49 @@ fun FilesScreen(
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (displayedDocuments.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillParentMaxSize()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                Icons.Default.DocumentScanner,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = Color.LightGray
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "No documents yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.Gray
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Tap 'Scan Now' to get started",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.LightGray
-                            )
-                        }
+            if (displayedDocuments.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.DocumentScanner,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = Color.LightGray
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No documents yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Tap 'Scan Now' to get started",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.LightGray
+                        )
                     }
-                } else {
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(gridColumns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(displayedDocuments, key = { it.id }) { doc ->
                         DocumentCard(
                             doc = doc,
                             onClick = { onDocumentClick(doc.id) },
                             onDelete = { id -> viewModel.deleteDocument(id) },
-                            onShare = { id ->
-                                val document = repository.getDocument(id) ?: return@DocumentCard
-                                val shareUri: Uri = if (document.pdfPath.startsWith("content://")) {
-                                    Uri.parse(document.pdfPath)
-                                } else {
-                                    val pdfFile = File(document.pdfPath)
-                                    if (!pdfFile.exists()) return@DocumentCard
-                                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
-                                }
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, shareUri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(intent, "Share PDF"))
-                            }
+                            onShare = { id -> shareDocument(id) }
                         )
                     }
                 }

@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.scanflow.ui.util.WindowSize
+import com.example.scanflow.ui.util.rememberWindowSize
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +45,12 @@ fun DocumentDetailScreen(
     refreshKey: Long = 0L
 ) {
     val context = LocalContext.current
+    val windowSize = rememberWindowSize()
+    val gridColumns = when (windowSize) {
+        WindowSize.Compact -> 2
+        WindowSize.Medium -> 3
+        WindowSize.Expanded -> 4
+    }
     val viewModel: DocumentDetailViewModel = viewModel(factory = DocumentDetailViewModel.Factory(documentId))
 
     val document  by viewModel.document.collectAsState()
@@ -150,7 +158,7 @@ fun DocumentDetailScreen(
         }
     ) { padding ->
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(gridColumns),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -159,7 +167,7 @@ fun DocumentDetailScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item(span = { GridItemSpan(2) }) {
+            item(span = { GridItemSpan(gridColumns) }) {
                 Column {
                     Text(
                         text = "FILE DETAILS",
@@ -194,7 +202,7 @@ fun DocumentDetailScreen(
                 }
             }
 
-            item(span = { GridItemSpan(2) }) {
+            item(span = { GridItemSpan(gridColumns) }) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
