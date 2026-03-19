@@ -3,6 +3,7 @@ package com.example.scanflow.ui.screens.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
@@ -44,6 +45,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import java.io.File
+import java.io.FileOutputStream
 import com.example.scanflow.ui.util.WindowSize
 import com.example.scanflow.ui.util.rememberWindowSize
 import kotlin.coroutines.resume
@@ -141,6 +143,7 @@ private fun CameraContent(
                 val file = File(context.cacheDir, "gallery_${System.currentTimeMillis()}_${capturedImages.size}.jpg")
                 file.outputStream().use { out -> inputStream.copyTo(out) }
                 inputStream.close()
+                compressImageFile(file)
                 capturedImages.add(file.absolutePath)
             } catch (e: Exception) {
                 Log.e("CameraScreen", "Failed to import gallery image", e)
@@ -287,7 +290,7 @@ private fun CameraContent(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 0.dp))
+                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 32.dp))
 
                     Box(
                         modifier = Modifier
@@ -302,6 +305,7 @@ private fun CameraContent(
                                     ContextCompat.getMainExecutor(context),
                                     object : ImageCapture.OnImageSavedCallback {
                                         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                            compressImageFile(photoFile)
                                             isCapturing = false
                                             capturedImages.add(photoFile.absolutePath)
                                         }
@@ -325,7 +329,7 @@ private fun CameraContent(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 0.dp))
+                    Spacer(modifier = Modifier.width(if (isTablet) 64.dp else 32.dp))
 
                     if (capturedImages.isNotEmpty()) {
                         Row(
@@ -395,6 +399,41 @@ private fun CameraContent(
             }
         }
     }
+}
+
+private fun compressImageFile(file: File, maxDimension: Int = 1920, quality: Int = 85) {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, options)
+    val origW = options.outWidth
+    val origH = options.outHeight
+    if (origW <= maxDimension && origH <= maxDimension) {
+        // Still re-compress with quality setting even if dimensions are fine
+        val bmp = BitmapFactory.decodeFile(file.absolutePath) ?: return
+        FileOutputStream(file).use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, quality, out) }
+        bmp.recycle()
+        return
+    }
+    val sampleSize = calculateInSampleSize(origW, origH, maxDimension)
+    val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    var bmp = BitmapFactory.decodeFile(file.absolutePath, decodeOptions) ?: return
+    // Fine-scale to exact max dimension
+    val scale = maxDimension.toFloat() / maxOf(bmp.width, bmp.height)
+    if (scale < 1f) {
+        val scaled = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+        bmp.recycle()
+        bmp = scaled
+    }
+    FileOutputStream(file).use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, quality, out) }
+    bmp.recycle()
+}
+
+private fun calculateInSampleSize(width: Int, height: Int, maxDimension: Int): Int {
+    var inSampleSize = 1
+    val larger = maxOf(width, height)
+    while (larger / inSampleSize > maxDimension * 2) {
+        inSampleSize *= 2
+    }
+    return inSampleSize
 }
 
 private suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutine { continuation ->

@@ -101,11 +101,22 @@ class PdfDataSource(private val context: Context) {
 
     private fun buildPdfDocument(bitmaps: List<Bitmap>): PdfDocument {
         val pdfDocument = PdfDocument()
+        val maxDim = 1920 // Max dimension for PDF pages (good quality at ~200 DPI on A4)
         bitmaps.forEachIndexed { index, bitmap ->
-            val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, index + 1).create()
+            val scaledBitmap = if (bitmap.width > maxDim || bitmap.height > maxDim) {
+                val scale = maxDim.toFloat() / maxOf(bitmap.width, bitmap.height)
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                )
+            } else bitmap
+            val pageInfo = PdfDocument.PageInfo.Builder(scaledBitmap.width, scaledBitmap.height, index + 1).create()
             val page = pdfDocument.startPage(pageInfo)
-            page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+            page.canvas.drawBitmap(scaledBitmap, 0f, 0f, null)
             pdfDocument.finishPage(page)
+            if (scaledBitmap !== bitmap) scaledBitmap.recycle()
         }
         return pdfDocument
     }
