@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.scanflow"
+    namespace = "com.mahabirneogy.scanflow"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.scanflow"
+        applicationId = "com.mahabirneogy.scanflow"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
