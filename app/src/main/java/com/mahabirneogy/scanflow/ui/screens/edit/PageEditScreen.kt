@@ -391,7 +391,7 @@ fun PageEditScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = { if (paths.isNotEmpty()) redoStack.add(paths.removeAt(redoStack.lastIndex)) },
+                        onClick = { if (paths.isNotEmpty()) redoStack.add(paths.removeAt(paths.lastIndex)) },
                         enabled = paths.isNotEmpty()
                     ) {
                         Icon(
