@@ -38,6 +38,11 @@ ui/
 ## Screenshots
 
 <!-- Add screenshots here -->
+![WhatsApp Image 2026-04-13 at 1 30 12 AM (1)](https://github.com/user-attachments/assets/61bcb887-6e9f-4f2a-afcc-a11292d6b5cf)
+![WhatsApp Image 2026-04-13 at 1 30 12 AM](https://github.com/user-attachments/assets/f2fcafa8-1a95-42bb-9378-8fa8468f6e10)
+![WhatsApp Image 2026-04-13 at 1 30 11 AM](https://github.com/user-attachments/assets/d59c507c-5301-46d2-8e2c-4e7d84ceda72)
+![WhatsApp Image 2026-04-13 at 1 30 13 AM](https://github.com/user-attachments/assets/3c6699a1-18ac-4549-b393-4378adb32802)
+
 
 ## Getting Started
 
